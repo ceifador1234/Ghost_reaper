@@ -1,0 +1,40 @@
+#!/bin/bash
+
+KEY_FILE="keys.txt"
+
+gerar_key() {
+    echo "======================================="
+    echo "        GERADOR DE KEYS - GHOST TEAM"
+    echo "======================================="
+    echo -n "Tipo de Key (7, 15, 30, permanente): "
+    read tipo
+
+    case $tipo in
+        7) dias=7;;
+        15) dias=15;;
+        30) dias=30;;
+        permanente|Permanente|PERMANENTE) dias=PERMANENTE;;
+        *)
+            echo "Tipo invÃ¡lido."
+            exit 1
+            ;;
+    esac
+
+    random=$(cat /dev/urandom | tr -dc 'A-Z0-9' | fold -w 6 | head -n 1)
+    key="GTEAM-$random"
+
+    if [[ $dias == "PERMANENTE" ]]; then
+        validade="PERMANENTE"
+    else
+        validade=$(date -d "+$dias days" +"%Y-%m-%d")
+    fi
+
+    echo "$key | $validade" >> $KEY_FILE
+    echo "======================================="
+    echo "Key Gerada: $key"
+    echo "Validade: $validade"
+    echo "Salvo em $KEY_FILE"
+    echo "======================================="
+}
+
+gerar_key
